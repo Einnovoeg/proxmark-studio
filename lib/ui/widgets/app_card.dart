@@ -10,6 +10,7 @@ class AppCard extends StatelessWidget {
     this.color,
     this.borderColor,
     this.onTap,
+    this.tooltip,
   });
 
   final Widget child;
@@ -17,6 +18,7 @@ class AppCard extends StatelessWidget {
   final Color? color;
   final Color? borderColor;
   final VoidCallback? onTap;
+  final String? tooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -46,12 +48,18 @@ class AppCard extends StatelessWidget {
       child: child,
     );
 
-    if (onTap == null) return card;
+    final interactiveCard = onTap == null
+        ? card
+        : InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: onTap,
+            child: card,
+          );
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: card,
-    );
+    if (tooltip == null || tooltip!.trim().isEmpty) {
+      return interactiveCard;
+    }
+
+    return Tooltip(message: tooltip!, child: interactiveCard);
   }
 }

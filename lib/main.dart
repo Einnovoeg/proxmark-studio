@@ -7,5 +7,5 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final appState = AppState();
   await appState.initialize();
-  runApp(MacKinectApp(state: appState));
+  runApp(ProxmarkStudioApp(state: appState));
 }

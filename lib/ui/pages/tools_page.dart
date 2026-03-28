@@ -18,6 +18,19 @@ class _ToolsPageState extends State<ToolsPage> {
   final TextEditingController _controller = TextEditingController();
 
   @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _sendCommand() {
+    final command = _controller.text.trim();
+    if (command.isEmpty) return;
+    widget.appState.sendCommand(command);
+    _controller.clear();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -118,13 +131,16 @@ class _ToolsPageState extends State<ToolsPage> {
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
                               const Spacer(),
-                              OutlinedButton.icon(
-                                onPressed:
-                                    widget.appState.consoleEntries.isNotEmpty
-                                    ? widget.appState.clearConsole
-                                    : null,
-                                icon: const Icon(Icons.delete_sweep_rounded),
-                                label: const Text('Clear'),
+                              Tooltip(
+                                message: 'Clear the visible PM3 session log.',
+                                child: OutlinedButton.icon(
+                                  onPressed:
+                                      widget.appState.consoleEntries.isNotEmpty
+                                      ? widget.appState.clearConsole
+                                      : null,
+                                  icon: const Icon(Icons.delete_sweep_rounded),
+                                  label: const Text('Clear'),
+                                ),
                               ),
                             ],
                           ),
@@ -158,13 +174,20 @@ class _ToolsPageState extends State<ToolsPage> {
                           const SizedBox(height: 12),
                           TextField(
                             controller: _controller,
-                            onSubmitted: (value) {
-                              widget.appState.sendCommand(value);
-                              _controller.clear();
-                            },
-                            decoration: const InputDecoration(
+                            onSubmitted: (_) => _sendCommand(),
+                            decoration: InputDecoration(
                               hintText: 'Enter pm3 command (ex: hf mf dump)',
-                              prefixIcon: Icon(Icons.chevron_right_rounded),
+                              prefixIcon: const Icon(
+                                Icons.chevron_right_rounded,
+                              ),
+                              suffixIcon: Tooltip(
+                                message:
+                                    'Send the command to the live PM3 session.',
+                                child: IconButton(
+                                  onPressed: _sendCommand,
+                                  icon: const Icon(Icons.send_rounded),
+                                ),
+                              ),
                             ),
                           ),
                           if (widget.appState.statusMessage != null)

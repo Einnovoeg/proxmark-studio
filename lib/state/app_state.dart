@@ -6,12 +6,16 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../app/app_metadata.dart';
+import '../models/activity_item.dart';
 import '../models/console_entry.dart';
 import '../models/core_info.dart';
+import '../models/saved_card.dart';
 import '../models/serial_port_info.dart';
 import '../models/update_info.dart';
 import '../services/core_manager.dart';
 import '../services/pm3_service.dart';
+import '../services/security_utils.dart';
 import '../services/serial_port_service.dart';
 import '../services/update_service.dart';
 import '../theme/palette.dart';
@@ -25,6 +29,7 @@ enum ReadScanMode {
   lfContinuous,
 }
 
+/// Coordinates runtime services, persisted workspace data, and UI-facing state.
 class AppState extends ChangeNotifier {
   AppState({
     CoreManager? coreManager,
@@ -34,7 +39,12 @@ class AppState extends ChangeNotifier {
   }) : _coreManager = coreManager ?? CoreManager(),
        _serialPortService = serialPortService ?? SerialPortService(),
        _pm3Service = pm3Service ?? Pm3Service(),
-       _updateService = updateService ?? UpdateService();
+       _updateService =
+           updateService ??
+           UpdateService(
+             owner: AppMetadata.releaseOwner,
+             repo: AppMetadata.releaseRepo,
+           );
 
   final CoreManager _coreManager;
   final SerialPortService _serialPortService;
@@ -49,6 +59,11 @@ class AppState extends ChangeNotifier {
   String? _statusMessage;
   UpdateInfo? _latestUpdate;
   final List<ConsoleEntry> _console = [];
+  final List<ActivityItem> _activity = [];
+  List<SavedCard> _savedCards = const [];
+  Map<int, String> _slotAssignments = const {};
+  int _activeSlot = 1;
+  String? _selectedWriteCardId;
   StreamSubscription<ConsoleEntry>? _consoleSub;
   bool _showOnboarding = false;
   bool _onboardingDismissed = false;
@@ -71,18 +86,33 @@ class AppState extends ChangeNotifier {
   AccentPalette _accentPalette = AccentPalette.blue;
 
   CoreInfo get coreInfo => _coreInfo;
-  List<SerialPortInfo> get ports => _ports;
+  List<SerialPortInfo> get ports => List.unmodifiable(_ports);
   SerialPortInfo? get selectedPort => _selectedPort;
   bool get isConnected => _connected;
   bool get isBusy => _busy;
   String? get statusMessage => _statusMessage;
   UpdateInfo? get latestUpdate => _latestUpdate;
   List<ConsoleEntry> get consoleEntries => List.unmodifiable(_console);
+  List<ActivityItem> get recentActivity => List.unmodifiable(_activity);
   bool get showOnboarding => _showOnboarding;
   ThemeMode get themeMode => _themeMode;
   bool get scanInProgress => _scanInProgress;
   bool get isContinuousScan => _isContinuousMode(_scanMode);
   AccentPalette get accentPalette => _accentPalette;
+  List<SavedCard> get savedCards => List.unmodifiable(_savedCards);
+  Map<int, String> get slotAssignments => Map.unmodifiable(_slotAssignments);
+  int get activeSlot => _activeSlot;
+  String? get selectedWriteCardId => _selectedWriteCardId;
+  SavedCard? get selectedWriteCard => _savedCards.cast<SavedCard?>().firstWhere(
+    (card) => card?.id == _selectedWriteCardId,
+    orElse: () => null,
+  );
+  bool get hasReadableCard =>
+      (_lastReadUid?.isNotEmpty ?? false) ||
+      (_lastReadType?.isNotEmpty ?? false);
+  bool get hasConfiguredUpdateSource =>
+      _updateService.hasConfiguredReleaseSource;
+
   String get scanModeLabel {
     switch (_scanMode) {
       case ReadScanMode.hfSingle:
@@ -123,6 +153,9 @@ class AppState extends ChangeNotifier {
 
   Future<void> initialize() async {
     await _loadSettings();
+    await _loadSavedCards();
+    await _loadSlots();
+    await _loadActivity();
     AppPalette.applyPalette(_accentPalette);
     _showOnboarding = false;
     await refreshPorts();
@@ -212,6 +245,30 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void selectWriteCard(String? cardId) {
+    _selectedWriteCardId = cardId;
+    unawaited(_saveSlots());
+    notifyListeners();
+  }
+
+  SavedCard? slotCard(int slotNumber) {
+    final cardId = _slotAssignments[slotNumber];
+    if (cardId == null) return null;
+    return _savedCards.cast<SavedCard?>().firstWhere(
+      (card) => card?.id == cardId,
+      orElse: () => null,
+    );
+  }
+
+  /// Returns every configured slot that currently points at the supplied card.
+  List<int> slotsForCard(String cardId) {
+    final slots = _slotAssignments.entries
+        .where((entry) => entry.value == cardId)
+        .map((entry) => entry.key)
+        .toList(growable: false);
+    return slots..sort();
+  }
+
   Future<void> connect() async {
     if (_connected || _busy) return;
     _busy = true;
@@ -221,6 +278,18 @@ class AppState extends ChangeNotifier {
     if (_coreInfo.path == null) {
       _statusMessage =
           'No Proxmark3 core found. Add a bundled build or install pm3.';
+      _busy = false;
+      notifyListeners();
+      return;
+    }
+
+    final supportDir = await getApplicationSupportDirectory();
+    final managedCoreRoot = '${supportDir.path}/core';
+    if (!SecurityUtils.isTrustedManagedOrSystemExecutablePath(
+      candidatePath: _coreInfo.path!,
+      managedRootPath: managedCoreRoot,
+    )) {
+      _statusMessage = 'Refusing to launch an untrusted Proxmark3 executable.';
       _busy = false;
       notifyListeners();
       return;
@@ -254,6 +323,7 @@ class AppState extends ChangeNotifier {
       _connected = true;
       _statusMessage = 'Connecting to $port...';
       _console.add(ConsoleEntry('Connecting to $port...'));
+      _recordActivity('Connection opened', port);
       Future.delayed(const Duration(milliseconds: 600), () {
         if (_connected) {
           sendCommand('hw version');
@@ -276,6 +346,7 @@ class AppState extends ChangeNotifier {
     _continuousScanTimer = null;
     await _pm3Service.stop();
     _connected = false;
+    _recordActivity('Connection closed', _selectedPort?.name ?? 'No port');
     notifyListeners();
   }
 
@@ -349,6 +420,10 @@ class AppState extends ChangeNotifier {
     _scanInProgress = false;
     _lastScanStartedAt = null;
     _statusMessage = status;
+    _recordActivity(
+      'Scan started',
+      scanModeLabel.isEmpty ? command : scanModeLabel,
+    );
     _configureContinuousTicker();
     _triggerScanCommand(command);
     notifyListeners();
@@ -367,6 +442,7 @@ class AppState extends ChangeNotifier {
     _scanInProgress = false;
     _statusMessage = 'Scan stopped.';
     _pm3Service.interrupt();
+    _recordActivity('Scan stopped', _selectedPort?.name ?? 'No port');
     notifyListeners();
   }
 
@@ -376,6 +452,13 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> checkForUpdates() async {
+    if (!_updateService.hasConfiguredReleaseSource) {
+      _statusMessage =
+          'Online core updates are configured only in official release builds. Import a local core or use the bundled core.';
+      notifyListeners();
+      return;
+    }
+
     _busy = true;
     _statusMessage = 'Checking for updates...';
     notifyListeners();
@@ -416,6 +499,7 @@ class AppState extends ChangeNotifier {
         );
         await refreshCore();
         _statusMessage = 'Core updated to ${_latestUpdate!.tag}.';
+        _recordActivity('Core updated', _latestUpdate!.tag);
       }
     } catch (error) {
       _statusMessage = 'Update install failed: $error';
@@ -431,15 +515,15 @@ class AppState extends ChangeNotifier {
     await checkForUpdates();
     if (_latestUpdate != null) {
       await installLatestUpdate();
-    } else {
+    } else if (_statusMessage == null || _statusMessage!.isEmpty) {
       _statusMessage =
-          'No compatible online binary found in latest release assets. Import a local core binary.';
+          'No compatible online core binary found. Import a local core binary instead.';
       notifyListeners();
     }
   }
 
   Future<void> _autoDownloadCore() async {
-    if (_busy) return;
+    if (_busy || !_updateService.hasConfiguredReleaseSource) return;
     _busy = true;
     _statusMessage = 'Downloading core...';
     _resetDownloadProgress();
@@ -478,7 +562,15 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final file = await openFile();
+      final file = await openFile(
+        acceptedTypeGroups: const [
+          XTypeGroup(
+            label: 'Proxmark3 client',
+            extensions: ['exe'],
+            uniformTypeIdentifiers: ['public.unix-executable'],
+          ),
+        ],
+      );
       if (file == null) {
         _statusMessage = 'Import cancelled.';
         _busy = false;
@@ -496,6 +588,7 @@ class AppState extends ChangeNotifier {
         if (setAsCurrent) {
           await refreshCore();
           _statusMessage = 'Core imported successfully.';
+          _recordActivity('Core imported', _fileName(file.path));
         } else {
           _statusMessage = 'Core added to local library.';
         }
@@ -514,6 +607,13 @@ class AppState extends ChangeNotifier {
 
   Future<void> downloadExperimentalCore() async {
     if (_busy) return;
+    if (!_updateService.hasConfiguredReleaseSource) {
+      _statusMessage =
+          'Experimental downloads are configured only in official release builds.';
+      notifyListeners();
+      return;
+    }
+
     _busy = true;
     _statusMessage = 'Checking for experimental updates...';
     _resetDownloadProgress();
@@ -538,6 +638,7 @@ class AppState extends ChangeNotifier {
           );
           await refreshCore();
           _statusMessage = 'Experimental core installed (${experimental.tag}).';
+          _recordActivity('Experimental core installed', experimental.tag);
         }
       }
     } catch (error) {
@@ -583,42 +684,259 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> openDocumentation() async {
-    const url = 'https://github.com/RfidResearchGroup/proxmark3/wiki';
+  Future<void> saveCurrentRead() async {
+    if (!hasReadableCard) {
+      _statusMessage = 'Read a card before saving it to the library.';
+      notifyListeners();
+      return;
+    }
+
+    final existing = _savedCards.cast<SavedCard?>().firstWhere(
+      (card) => card?.uid == _lastReadUid && card?.type == _lastReadType,
+      orElse: () => null,
+    );
+    if (existing != null) {
+      _selectedWriteCardId = existing.id;
+      _statusMessage = 'Card already exists in the local library.';
+      notifyListeners();
+      return;
+    }
+
+    final now = DateTime.now();
+    final card = SavedCard.fromScannedRead(
+      label: _buildSavedCardLabel(),
+      timestamp: now,
+      type: _lastReadType,
+      uid: _lastReadUid,
+      sak: _lastReadSak,
+      atqa: _lastReadAtqa,
+    );
+    _savedCards = [card, ..._savedCards];
+    _selectedWriteCardId = card.id;
+    await _saveSavedCards();
+    await _saveSlots();
+    _statusMessage = 'Saved ${card.label} to the local library.';
+    _recordActivity('Card saved', card.label);
+    notifyListeners();
+  }
+
+  Future<void> cloneCurrentReadToNextFreeSlot() async {
+    if (!hasReadableCard) {
+      _statusMessage = 'Read a card before cloning it into a slot.';
+      notifyListeners();
+      return;
+    }
+
+    await saveCurrentRead();
+    final card = selectedWriteCard;
+    if (card == null) return;
+    await assignSavedCardToNextFreeSlot(card.id);
+  }
+
+  Future<void> importSavedCardFromFile() async {
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Saved card', extensions: ['json', 'txt', 'bin']),
+      ],
+    );
+    if (file == null) {
+      _statusMessage = 'Import cancelled.';
+      notifyListeners();
+      return;
+    }
+
     try {
-      if (Platform.isMacOS) {
-        await Process.start('open', [url]);
-      } else if (Platform.isLinux) {
-        await Process.start('xdg-open', [url]);
-      } else if (Platform.isWindows) {
-        await Process.start('cmd', ['/c', 'start', '', url], runInShell: true);
-      } else {
-        _console.add(ConsoleEntry('Documentation: $url'));
-      }
-      _statusMessage = 'Opened Proxmark documentation.';
-    } catch (_) {
-      _statusMessage = 'Unable to open browser. Documentation: $url';
-      _console.add(ConsoleEntry('Documentation: $url'));
+      final imported = await _parseSavedCardFile(File(file.path));
+      _savedCards = [imported, ..._savedCards];
+      _selectedWriteCardId = imported.id;
+      await _saveSavedCards();
+      await _saveSlots();
+      _statusMessage = 'Imported ${imported.label}.';
+      _recordActivity('Card imported', imported.label);
+    } catch (error) {
+      _statusMessage = 'Card import failed: $error';
     }
     notifyListeners();
   }
 
+  Future<void> deleteSavedCard(String cardId) async {
+    final existing = selectedWriteCard;
+    _savedCards = _savedCards.where((card) => card.id != cardId).toList();
+    final nextAssignments = <int, String>{};
+    _slotAssignments.forEach((slot, assignedCardId) {
+      if (assignedCardId != cardId) {
+        nextAssignments[slot] = assignedCardId;
+      }
+    });
+    _slotAssignments = nextAssignments;
+    if (_selectedWriteCardId == cardId) {
+      _selectedWriteCardId = _savedCards.isEmpty ? null : _savedCards.first.id;
+    }
+    await _saveSavedCards();
+    await _saveSlots();
+    if (existing != null) {
+      _recordActivity('Card removed', existing.label);
+    }
+    _statusMessage = 'Card removed from the local library.';
+    notifyListeners();
+  }
+
+  Future<void> updateWriteCommands(String cardId, List<String> commands) async {
+    _savedCards = _savedCards
+        .map(
+          (card) =>
+              card.id == cardId ? card.copyWith(writeCommands: commands) : card,
+        )
+        .toList(growable: false);
+    await _saveSavedCards();
+    final card = _savedCards.cast<SavedCard?>().firstWhere(
+      (item) => item?.id == cardId,
+      orElse: () => null,
+    );
+    if (card != null) {
+      _recordActivity(
+        commands.isEmpty ? 'Write plan cleared' : 'Write plan updated',
+        card.label,
+      );
+    }
+    _statusMessage = commands.isEmpty
+        ? 'Write plan cleared.'
+        : 'Write plan saved.';
+    notifyListeners();
+  }
+
+  Future<void> assignSavedCardToSlot(String cardId, int slotNumber) async {
+    final card = _savedCards.cast<SavedCard?>().firstWhere(
+      (item) => item?.id == cardId,
+      orElse: () => null,
+    );
+    if (card == null) {
+      _statusMessage = 'Select a saved card before assigning a slot.';
+      notifyListeners();
+      return;
+    }
+
+    final nextAssignments = Map<int, String>.from(_slotAssignments);
+    nextAssignments[slotNumber] = cardId;
+    _slotAssignments = nextAssignments;
+    _activeSlot = slotNumber;
+    _selectedWriteCardId = cardId;
+    await _saveSlots();
+    _statusMessage = '${card.label} assigned to slot $slotNumber.';
+    _recordActivity('Slot assigned', 'Slot $slotNumber • ${card.label}');
+    notifyListeners();
+  }
+
+  Future<void> assignSavedCardToNextFreeSlot(String cardId) async {
+    final nextSlot = _firstFreeSlot() ?? _activeSlot;
+    await assignSavedCardToSlot(cardId, nextSlot);
+  }
+
+  Future<void> clearSlot(int slotNumber) async {
+    if (!_slotAssignments.containsKey(slotNumber)) return;
+    final nextAssignments = Map<int, String>.from(_slotAssignments);
+    nextAssignments.remove(slotNumber);
+    _slotAssignments = nextAssignments;
+    if (_activeSlot == slotNumber) {
+      _activeSlot = 1;
+    }
+    await _saveSlots();
+    _statusMessage = 'Cleared slot $slotNumber.';
+    _recordActivity('Slot cleared', 'Slot $slotNumber');
+    notifyListeners();
+  }
+
+  Future<void> activateSlot(int slotNumber) async {
+    _activeSlot = slotNumber;
+    await _saveSlots();
+    final card = slotCard(slotNumber);
+    _statusMessage = card == null
+        ? 'Slot $slotNumber is empty.'
+        : 'Slot $slotNumber is now active.';
+    if (card != null) {
+      _selectedWriteCardId = card.id;
+      _recordActivity('Slot activated', 'Slot $slotNumber • ${card.label}');
+    }
+    notifyListeners();
+  }
+
+  Future<void> runWritePlan({String? cardId, List<String>? commands}) async {
+    final targetCard = cardId == null
+        ? selectedWriteCard
+        : _savedCards.cast<SavedCard?>().firstWhere(
+            (card) => card?.id == cardId,
+            orElse: () => null,
+          );
+    if (targetCard == null) {
+      _statusMessage = 'Select a saved card before running a write plan.';
+      notifyListeners();
+      return;
+    }
+
+    final plannedCommands = (commands ?? targetCard.normalizedWriteCommands)
+        .map((command) => command.trim())
+        .where((command) => command.isNotEmpty)
+        .toList(growable: false);
+
+    if (plannedCommands.isEmpty) {
+      _statusMessage =
+          'Add one or more pm3 commands to the write plan before running it.';
+      notifyListeners();
+      return;
+    }
+
+    await runCommandChain(plannedCommands);
+    _recordActivity('Write plan queued', targetCard.label);
+  }
+
+  Future<void> openDocumentation() async {
+    await _openExternalUrl(
+      AppMetadata.documentationUrl,
+      successMessage: 'Opened Proxmark documentation.',
+      fallbackLabel: 'Documentation',
+    );
+  }
+
   Future<void> openSupportLink() async {
-    const url = 'https://buymeacoffee.com/einnovoeg';
+    await _openExternalUrl(
+      AppMetadata.supportUrl,
+      successMessage: 'Opened support link.',
+      fallbackLabel: 'Support',
+    );
+  }
+
+  Future<void> _openExternalUrl(
+    String url, {
+    required String successMessage,
+    required String fallbackLabel,
+  }) async {
+    final safeUri = Uri.tryParse(url);
+    if (safeUri == null ||
+        !SecurityUtils.isSafeExternalHttpsUrl(safeUri.toString())) {
+      _statusMessage = 'Blocked unsafe link. $fallbackLabel: $url';
+      _console.add(ConsoleEntry('$fallbackLabel: $url', isError: true));
+      notifyListeners();
+      return;
+    }
+
     try {
       if (Platform.isMacOS) {
-        await Process.start('open', [url]);
+        await Process.start('open', [safeUri.toString()]);
       } else if (Platform.isLinux) {
-        await Process.start('xdg-open', [url]);
+        await Process.start('xdg-open', [safeUri.toString()]);
       } else if (Platform.isWindows) {
-        await Process.start('cmd', ['/c', 'start', '', url], runInShell: true);
+        await Process.start('rundll32', [
+          'url.dll,FileProtocolHandler',
+          safeUri.toString(),
+        ]);
       } else {
-        _console.add(ConsoleEntry('Support: $url'));
+        _console.add(ConsoleEntry('$fallbackLabel: ${safeUri.toString()}'));
       }
-      _statusMessage = 'Opened support link.';
+      _statusMessage = successMessage;
     } catch (_) {
-      _statusMessage = 'Unable to open browser. Support: $url';
-      _console.add(ConsoleEntry('Support: $url'));
+      _statusMessage =
+          'Unable to open browser. $fallbackLabel: ${safeUri.toString()}';
+      _console.add(ConsoleEntry('$fallbackLabel: ${safeUri.toString()}'));
     }
     notifyListeners();
   }
@@ -626,6 +944,21 @@ class AppState extends ChangeNotifier {
   Future<File> _settingsFile() async {
     final supportDir = await getApplicationSupportDirectory();
     return File('${supportDir.path}/settings.json');
+  }
+
+  Future<File> _savedCardsFile() async {
+    final supportDir = await getApplicationSupportDirectory();
+    return File('${supportDir.path}/saved_cards.json');
+  }
+
+  Future<File> _slotsFile() async {
+    final supportDir = await getApplicationSupportDirectory();
+    return File('${supportDir.path}/slots.json');
+  }
+
+  Future<File> _activityFile() async {
+    final supportDir = await getApplicationSupportDirectory();
+    return File('${supportDir.path}/activity.json');
   }
 
   Future<void> _loadSettings() async {
@@ -658,6 +991,92 @@ class AppState extends ChangeNotifier {
           'themeMode': _themeMode.name,
           'accentPalette': AppPalette.paletteName(_accentPalette),
         }),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _loadSavedCards() async {
+    try {
+      final file = await _savedCardsFile();
+      if (!await file.exists()) return;
+      final data = jsonDecode(await file.readAsString());
+      if (data is! List) return;
+      _savedCards = data
+          .whereType<Map<String, dynamic>>()
+          .map(SavedCard.fromJson)
+          .toList(growable: false);
+      if (_savedCards.isNotEmpty && _selectedWriteCardId == null) {
+        _selectedWriteCardId = _savedCards.first.id;
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveSavedCards() async {
+    try {
+      final file = await _savedCardsFile();
+      await file.writeAsString(
+        jsonEncode(_savedCards.map((card) => card.toJson()).toList()),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _loadSlots() async {
+    try {
+      final file = await _slotsFile();
+      if (!await file.exists()) return;
+      final data = jsonDecode(await file.readAsString());
+      if (data is! Map<String, dynamic>) return;
+      final rawAssignments = data['slotAssignments'];
+      if (rawAssignments is Map<String, dynamic>) {
+        final assignments = <int, String>{};
+        rawAssignments.forEach((slot, cardId) {
+          final slotNumber = int.tryParse(slot);
+          if (slotNumber != null && cardId is String && cardId.isNotEmpty) {
+            assignments[slotNumber] = cardId;
+          }
+        });
+        _slotAssignments = assignments;
+      }
+      _activeSlot = data['activeSlot'] as int? ?? 1;
+      _selectedWriteCardId = data['selectedWriteCardId'] as String?;
+    } catch (_) {}
+  }
+
+  Future<void> _saveSlots() async {
+    try {
+      final file = await _slotsFile();
+      await file.writeAsString(
+        jsonEncode({
+          'activeSlot': _activeSlot,
+          'selectedWriteCardId': _selectedWriteCardId,
+          'slotAssignments': _slotAssignments.map(
+            (slot, cardId) => MapEntry(slot.toString(), cardId),
+          ),
+        }),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _loadActivity() async {
+    try {
+      final file = await _activityFile();
+      if (!await file.exists()) return;
+      final data = jsonDecode(await file.readAsString());
+      if (data is! List) return;
+      _activity.addAll(
+        data
+            .whereType<Map<String, dynamic>>()
+            .map(ActivityItem.fromJson)
+            .take(20),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _saveActivity() async {
+    try {
+      final file = await _activityFile();
+      await file.writeAsString(
+        jsonEncode(_activity.map((item) => item.toJson()).toList()),
       );
     } catch (_) {}
   }
@@ -698,6 +1117,8 @@ class AppState extends ChangeNotifier {
     return '${size.toStringAsFixed(precision)} ${units[unitIndex]}';
   }
 
+  // PM3 emits a mix of status, scan results, and command echos. This parser
+  // keeps the UI reactive without trying to fully model the CLI protocol.
   void _handleOutput(ConsoleEntry entry) {
     final cleanLine = entry.message.replaceAll(
       RegExp(r'\x1B\[[0-9;]*[A-Za-z]'),
@@ -709,6 +1130,7 @@ class AppState extends ChangeNotifier {
     }
     if (line.contains('connected to') && line.contains('proxmark')) {
       _statusMessage = 'Connected to hardware.';
+      _recordActivity('Hardware detected', entry.message);
     }
     if (line.contains('invalid serial port')) {
       _statusMessage =
@@ -762,11 +1184,17 @@ class AppState extends ChangeNotifier {
       final rawUid = uidMatch.group(1)?.trim();
       if (rawUid != null && rawUid.isNotEmpty) {
         _lastReadUid = rawUid.replaceAll(RegExp(r'\s+'), '');
-        if (_recentReadUids.isEmpty || _recentReadUids.first != _lastReadUid) {
+        final isNewUid =
+            _recentReadUids.isEmpty || _recentReadUids.first != _lastReadUid;
+        if (isNewUid) {
           _recentReadUids.insert(0, _lastReadUid!);
           if (_recentReadUids.length > 8) {
             _recentReadUids.removeLast();
           }
+          _recordActivity(
+            'Card detected',
+            '${_lastReadType ?? 'Unknown'} • ${_lastReadUid!}',
+          );
         }
         _scanInProgress = false;
         _lastScanStartedAt = null;
@@ -827,6 +1255,8 @@ class AppState extends ChangeNotifier {
         mode == ReadScanMode.lfContinuous;
   }
 
+  // Continuous scans keep issuing search commands, but only after the previous
+  // attempt quiets down or times out.
   void _configureContinuousTicker() {
     _continuousScanTimer?.cancel();
     _continuousScanTimer = null;
@@ -881,6 +1311,70 @@ class AppState extends ChangeNotifier {
     });
   }
 
+  void _recordActivity(String title, String detail) {
+    final item = ActivityItem(
+      title: title,
+      detail: detail,
+      timestamp: DateTime.now(),
+    );
+    _activity.insert(0, item);
+    if (_activity.length > 20) {
+      _activity.removeRange(20, _activity.length);
+    }
+    unawaited(_saveActivity());
+  }
+
+  Future<SavedCard> _parseSavedCardFile(File file) async {
+    final fileName = _fileName(file.path);
+    final extension = fileName.contains('.')
+        ? fileName.split('.').last.toLowerCase()
+        : '';
+    if (extension == 'json') {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is Map<String, dynamic>) {
+        return SavedCard.fromJson(decoded).copyWith(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          source: SavedCardSource.imported,
+        );
+      }
+      throw const FormatException('JSON card file must be an object.');
+    }
+
+    final label = fileName.contains('.')
+        ? fileName.substring(0, fileName.lastIndexOf('.'))
+        : fileName;
+    return SavedCard(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      label: label.isEmpty ? 'Imported Card' : label,
+      createdAt: DateTime.now(),
+      source: SavedCardSource.imported,
+      notes: 'Imported from $fileName',
+    );
+  }
+
+  String _buildSavedCardLabel() {
+    final type = _lastReadType ?? 'Card';
+    final uid = _lastReadUid;
+    if (uid != null && uid.isNotEmpty) {
+      return '$type $uid';
+    }
+    return '$type ${DateTime.now().toIso8601String()}';
+  }
+
+  int? _firstFreeSlot() {
+    for (var slot = 1; slot <= 8; slot += 1) {
+      if (!_slotAssignments.containsKey(slot)) {
+        return slot;
+      }
+    }
+    return null;
+  }
+
+  String _fileName(String path) {
+    if (path.isEmpty) return path;
+    return path.split(Platform.pathSeparator).last;
+  }
+
   SerialPortInfo? _findPreferredPort(List<SerialPortInfo> ports) {
     if (ports.isEmpty) return null;
     const priorityPatterns = [
@@ -907,6 +1401,8 @@ class AppState extends ChangeNotifier {
     return ports.first;
   }
 
+  // macOS PM3 sessions are more reliable on the callout device, but the UI
+  // should still surface the dial-in name users actually see in /dev.
   String? _resolveConnectionPort(String? selectedPortName) {
     if (selectedPortName == null || selectedPortName.isEmpty) return null;
     if (!Platform.isMacOS) return selectedPortName;

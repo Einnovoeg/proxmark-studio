@@ -1,7 +1,7 @@
-name: mackinect
-description: "macKinect - modern cross-platform GUI for Proxmark3 (Iceman)."
+name: proxmark_studio
+description: "Proxmark Studio - modern cross-platform GUI for Proxmark3 (Iceman)."
 publish_to: 'none'
-version: 0.1.0
+version: 0.2.0+1
 
 environment:
   sdk: ^3.10.8
@@ -13,6 +13,7 @@ dependencies:
   flutter_libserialport: ^0.6.0
   libserialport: ^0.3.0+1
   path_provider: ^2.1.5
+  path: ^1.9.1
   http: ^1.6.0
   archive: ^4.0.7
   crypto: ^3.0.6

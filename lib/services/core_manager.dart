@@ -6,7 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/core_info.dart';
+import 'security_utils.dart';
 
+/// Resolves the PM3 client executable from the active installation source and
+/// keeps extracted bundled runtimes usable across fresh installs.
 class CoreManager {
   Future<CoreInfo> resolveCore() async {
     final supportDir = await getApplicationSupportDirectory();
@@ -21,7 +24,13 @@ class CoreManager {
       if (data is Map<String, dynamic>) {
         final path = data['path'] as String?;
         final version = data['version'] as String?;
-        if (path != null && await File(path).exists()) {
+        if (path != null &&
+            await File(path).exists() &&
+            SecurityUtils.isTrustedManagedOrSystemExecutablePath(
+              candidatePath: path,
+              managedRootPath: coreRoot.path,
+            ) &&
+            await _isUsableCoreEntryPoint(path)) {
           return CoreInfo(
             path: path,
             source: CoreSource.updated,
@@ -62,6 +71,18 @@ class CoreManager {
     if (!await coreRoot.exists()) {
       await coreRoot.create(recursive: true);
     }
+
+    if (!SecurityUtils.isTrustedManagedOrSystemExecutablePath(
+      candidatePath: path,
+      managedRootPath: coreRoot.path,
+    )) {
+      throw ArgumentError.value(
+        path,
+        'path',
+        'Only app-managed or known system Proxmark3 binaries can be trusted.',
+      );
+    }
+
     final currentFile = File('${coreRoot.path}/current.json');
     await currentFile.writeAsString(
       jsonEncode({'path': path, 'version': version}),
@@ -82,11 +103,22 @@ class CoreManager {
     final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
     final importDir = Directory('${coreRoot.path}/imported/$timestamp');
     await importDir.create(recursive: true);
+    final importBinDir = Directory('${importDir.path}/bin');
+    await importBinDir.create(recursive: true);
 
-    final executableName = Platform.isWindows ? 'pm3.exe' : 'pm3';
-    final outFile = File('${importDir.path}/$executableName');
+    final sourceExecutableName = file.uri.pathSegments.last;
+    final outFile = File('${importBinDir.path}/$sourceExecutableName');
     await file.copy(outFile.path);
-    await _ensureExecutable(outFile);
+    await _copySiblingClientIfAvailable(file, importDir);
+    await _copyShareDirectoryIfAvailable(file.parent, importDir);
+    await _restoreExecutableBits(importDir);
+
+    if (!await _isUsableCoreEntryPoint(outFile.path)) {
+      await importDir.delete(recursive: true);
+      throw StateError(
+        'The selected Proxmark3 client could not start cleanly. Import a complete, working build that passes `pm3 --helpclient`.',
+      );
+    }
 
     if (setAsCurrent) {
       await writeCurrent(
@@ -112,7 +144,10 @@ class CoreManager {
     }
 
     final existing = _resolveEmbeddedEntryPoint(embeddedDir);
-    if (existing != null && existing.existsSync()) {
+    if (existing != null &&
+        existing.existsSync() &&
+        await _isUsableCoreEntryPoint(existing.path)) {
+      await _restoreExecutableBits(embeddedDir);
       return existing.path;
     }
 
@@ -129,9 +164,12 @@ class CoreManager {
       );
     }
 
+    await _restoreExecutableBits(embeddedDir);
     final executable = _resolveEmbeddedEntryPoint(embeddedDir);
-    if (executable == null) return null;
-    await _ensureExecutable(executable);
+    if (executable == null || !await _isUsableCoreEntryPoint(executable.path)) {
+      await embeddedDir.delete(recursive: true);
+      return null;
+    }
     return executable.path;
   }
 
@@ -162,9 +200,25 @@ class CoreManager {
     return null;
   }
 
-  Future<void> _ensureExecutable(File file) async {
-    if (Platform.isWindows) return;
-    await Process.run('chmod', ['+x', file.path]);
+  Future<void> _restoreExecutableBits(Directory root) async {
+    if (Platform.isWindows || !await root.exists()) return;
+
+    final executableMatchers = <RegExp>[
+      RegExp(r'/bin/[^/]+$'),
+      RegExp(r'/lib/[^/]+\.dylib$'),
+      RegExp(r'/Frameworks/.+/Python$'),
+    ];
+
+    await for (final entity in root.list(recursive: true, followLinks: false)) {
+      if (entity is! File) continue;
+      final normalizedPath = entity.path.replaceAll('\\', '/');
+      final shouldMarkExecutable = executableMatchers.any(
+        (pattern) => pattern.hasMatch(normalizedPath),
+      );
+      if (shouldMarkExecutable) {
+        await Process.run('chmod', ['+x', entity.path]);
+      }
+    }
   }
 
   Future<String?> _bootstrapFromSystem(Directory coreRoot) async {
@@ -178,10 +232,20 @@ class CoreManager {
     if (!await embeddedDir.exists()) {
       await embeddedDir.create(recursive: true);
     }
+    final embeddedBinDir = Directory('${embeddedDir.path}/bin');
+    if (!await embeddedBinDir.exists()) {
+      await embeddedBinDir.create(recursive: true);
+    }
 
-    final outFile = File('${embeddedDir.path}/$executableName');
+    final outFile = File('${embeddedBinDir.path}/$executableName');
     await File(candidate).copy(outFile.path);
-    await _ensureExecutable(outFile);
+    await _copySiblingClientIfAvailable(File(candidate), embeddedDir);
+    await _copyShareDirectoryIfAvailable(File(candidate).parent, embeddedDir);
+    await _restoreExecutableBits(embeddedDir);
+    if (!await _isUsableCoreEntryPoint(outFile.path)) {
+      await embeddedDir.delete(recursive: true);
+      return null;
+    }
     return outFile.path;
   }
 
@@ -195,22 +259,9 @@ class CoreManager {
     ];
 
     for (final candidate in candidates) {
-      if (await File(candidate).exists()) {
+      if (await File(candidate).exists() &&
+          SecurityUtils.isKnownSystemCoreExecutablePath(candidate)) {
         return candidate;
-      }
-    }
-
-    final whichResult = await Process.run(
-      Platform.isWindows ? 'where' : 'which',
-      ['pm3'],
-    );
-    if (whichResult.exitCode == 0) {
-      final stdout = (whichResult.stdout as String).trim();
-      if (stdout.isNotEmpty) {
-        final first = stdout.split(RegExp(r'[\r\n]+')).first.trim();
-        if (first.isNotEmpty && await File(first).exists()) {
-          return first;
-        }
       }
     }
     return null;
@@ -218,7 +269,7 @@ class CoreManager {
 
   String? guessWorkingDir(String? executablePath) {
     if (executablePath == null || executablePath.isEmpty) return null;
-    var file = File(executablePath);
+    final file = File(executablePath);
     if (!file.existsSync()) {
       return null;
     }
@@ -242,6 +293,90 @@ class CoreManager {
         Directory('${dir.path}/dictionaries').existsSync() ||
         Directory('${dir.path}/share/proxmark3').existsSync() ||
         Directory('${dir.parent.path}/share/proxmark3').existsSync();
+  }
+
+  Future<void> _copySiblingClientIfAvailable(
+    File sourceExecutable,
+    Directory destinationRoot,
+  ) async {
+    final sourceName = sourceExecutable.uri.pathSegments.last.toLowerCase();
+    if (!sourceName.startsWith('pm3')) {
+      return;
+    }
+
+    final siblingName = Platform.isWindows ? 'proxmark3.exe' : 'proxmark3';
+    final sibling = File('${sourceExecutable.parent.path}/$siblingName');
+    if (!await sibling.exists()) {
+      return;
+    }
+
+    final destinationBin = Directory('${destinationRoot.path}/bin');
+    await destinationBin.create(recursive: true);
+    await sibling.copy('${destinationBin.path}/$siblingName');
+  }
+
+  Future<void> _copyShareDirectoryIfAvailable(
+    Directory sourceBinDir,
+    Directory destinationRoot,
+  ) async {
+    final shareDir = Directory('${sourceBinDir.parent.path}/share/proxmark3');
+    if (!await shareDir.exists()) {
+      return;
+    }
+
+    final destinationShare = Directory(
+      '${destinationRoot.path}/share/proxmark3',
+    );
+    if (await destinationShare.exists()) {
+      await destinationShare.delete(recursive: true);
+    }
+    await destinationShare.parent.create(recursive: true);
+
+    await for (final entity in shareDir.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      final relativePath = entity.path.substring(shareDir.path.length + 1);
+      final outputPath = '${destinationShare.path}/$relativePath';
+      if (entity is Directory) {
+        await Directory(outputPath).create(recursive: true);
+      } else if (entity is File) {
+        await File(outputPath).parent.create(recursive: true);
+        await entity.copy(outputPath);
+      }
+    }
+  }
+
+  /// Treats a core as valid only when the entry point can load the real PM3
+  /// client, not just when a wrapper script happens to exist on disk.
+  Future<bool> _isUsableCoreEntryPoint(String executablePath) async {
+    final executable = File(executablePath);
+    if (!await executable.exists()) {
+      return false;
+    }
+
+    final fileName = executable.uri.pathSegments.last.toLowerCase();
+    final arguments = fileName.startsWith('pm3') ? ['--helpclient'] : ['-h'];
+    final workingDirectory =
+        guessWorkingDir(executable.path) ?? executable.parent.path;
+
+    try {
+      final result = await Process.run(
+        executable.path,
+        arguments,
+        workingDirectory: workingDirectory,
+      ).timeout(const Duration(seconds: 5));
+      final output = '${result.stdout}\n${result.stderr}'.toLowerCase();
+      if (result.exitCode != 0) {
+        return false;
+      }
+      return !output.contains('symbol not found') &&
+          !output.contains('abort trap') &&
+          !output.contains('dyld[') &&
+          !output.contains('error while loading shared libraries');
+    } catch (_) {
+      return false;
+    }
   }
 
   String? _platformSlug() {

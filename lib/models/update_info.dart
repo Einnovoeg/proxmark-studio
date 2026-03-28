@@ -5,6 +5,8 @@ class UpdateInfo {
     required this.publishedAt,
     required this.assetName,
     required this.downloadUrl,
+    required this.checksumAssetName,
+    required this.checksumUrl,
   });
 
   final String tag;
@@ -12,4 +14,6 @@ class UpdateInfo {
   final DateTime? publishedAt;
   final String assetName;
   final String downloadUrl;
+  final String checksumAssetName;
+  final String checksumUrl;
 }

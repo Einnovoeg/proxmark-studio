@@ -1,25 +1,35 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
+import '../../models/activity_item.dart';
 import '../../state/app_state.dart';
 import '../../theme/palette.dart';
 import '../widgets/app_card.dart';
 import '../widgets/section_header.dart';
 
 class HomePage extends StatelessWidget {
-  const HomePage({super.key, required this.connected, this.portName});
+  const HomePage({
+    super.key,
+    required this.appState,
+    required this.connected,
+    this.portName,
+    required this.onOpenConsole,
+  });
 
+  final AppState appState;
   final bool connected;
   final String? portName;
+  final VoidCallback onOpenConsole;
 
   @override
   Widget build(BuildContext context) {
-    final appState = context.watch<AppState>();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final mutedSurface = isDark
         ? const Color(0xFF15212E)
         : AppPalette.surfaceMuted;
+    final recentActivity = appState.recentActivity
+        .take(3)
+        .toList(growable: false);
     return LayoutBuilder(
       builder: (context, constraints) {
         return SingleChildScrollView(
@@ -42,35 +52,48 @@ class HomePage extends StatelessWidget {
                                   spacing: 10,
                                   runSpacing: 10,
                                   children: [
-                                    FilledButton.icon(
-                                      onPressed: appState.importCoreFromFile,
-                                      icon: const Icon(
-                                        Icons.upload_file_rounded,
+                                    Tooltip(
+                                      message:
+                                          'Import a local Proxmark3 client build.',
+                                      child: FilledButton.icon(
+                                        onPressed: appState.importCoreFromFile,
+                                        icon: const Icon(
+                                          Icons.upload_file_rounded,
+                                        ),
+                                        label: const Text('Import core'),
                                       ),
-                                      label: const Text('Import core'),
                                     ),
-                                    OutlinedButton.icon(
-                                      onPressed: appState.downloadLatestCore,
-                                      icon: const Icon(
-                                        Icons.cloud_download_rounded,
+                                    Tooltip(
+                                      message:
+                                          'Download the latest stable official core when a release feed is configured.',
+                                      child: OutlinedButton.icon(
+                                        onPressed: appState.downloadLatestCore,
+                                        icon: const Icon(
+                                          Icons.cloud_download_rounded,
+                                        ),
+                                        label: const Text('Download stable'),
                                       ),
-                                      label: const Text('Download stable'),
                                     ),
                                   ],
                                 )
-                              : FilledButton.icon(
-                                  onPressed: appState.isConnected
-                                      ? appState.disconnect
-                                      : appState.connect,
-                                  icon: Icon(
-                                    appState.isConnected
-                                        ? Icons.link_off
-                                        : Icons.link,
-                                  ),
-                                  label: Text(
-                                    appState.isConnected
-                                        ? 'Disconnect'
-                                        : 'Connect',
+                              : Tooltip(
+                                  message: appState.isConnected
+                                      ? 'Disconnect the current PM3 session.'
+                                      : 'Connect to the selected Proxmark3 device.',
+                                  child: FilledButton.icon(
+                                    onPressed: appState.isConnected
+                                        ? appState.disconnect
+                                        : appState.connect,
+                                    icon: Icon(
+                                      appState.isConnected
+                                          ? Icons.link_off
+                                          : Icons.link,
+                                    ),
+                                    label: Text(
+                                      appState.isConnected
+                                          ? 'Disconnect'
+                                          : 'Connect',
+                                    ),
                                   ),
                                 );
 
@@ -88,7 +111,7 @@ class HomePage extends StatelessWidget {
                                 Text(
                                   appState.coreInfo.isAvailable
                                       ? 'Select a Proxmark3 port and click Connect.'
-                                      : 'Import a pm3 binary or place one in assets/bundled.',
+                                      : 'Import a pm3 binary or install an official release build.',
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: theme.hintColor,
                                   ),
@@ -227,8 +250,8 @@ class HomePage extends StatelessWidget {
                                 const SizedBox(height: 16),
                                 Text(
                                   connected
-                                      ? 'Iceman firmware detected. Reader modes and scripting are available.'
-                                      : 'Connect your Proxmark3 to begin scanning and emulation.',
+                                      ? 'Iceman-compatible firmware session is active. Reader tools and command chaining are available.'
+                                      : 'Connect your Proxmark3 to begin scanning, library capture, and advanced workflows.',
                                   style: theme.textTheme.bodyMedium?.copyWith(
                                     color: theme.hintColor,
                                   ),
@@ -244,13 +267,21 @@ class HomePage extends StatelessWidget {
                                       appState.coreInfo.versionLabel ??
                                           'unknown',
                                     ),
-                                    _statChip(context, 'Mode', 'Standalone'),
+                                    _statChip(
+                                      context,
+                                      'Mode',
+                                      connected ? 'Session Live' : 'Standby',
+                                    ),
                                     _statChip(
                                       context,
                                       'Port',
                                       portName ?? 'Not selected',
                                     ),
-                                    _statChip(context, 'Voltage', '4.98V'),
+                                    _statChip(
+                                      context,
+                                      'Saved Cards',
+                                      appState.savedCards.length.toString(),
+                                    ),
                                   ],
                                 ),
                               ],
@@ -275,8 +306,10 @@ class HomePage extends StatelessWidget {
                                   icon: Icons.bolt,
                                   title: 'Download Core',
                                   subtitle:
-                                      'Pull latest stable core (GitHub release).',
+                                      'Pull latest official bundled core archive.',
                                   color: AppPalette.secondary,
+                                  tooltip:
+                                      'Check the configured release feed and download the latest stable core.',
                                   onTap: appState.isBusy
                                       ? null
                                       : appState.downloadLatestCore,
@@ -285,21 +318,25 @@ class HomePage extends StatelessWidget {
                                 _actionTile(
                                   context,
                                   icon: Icons.hub,
-                                  title: 'Start live console',
+                                  title: 'Open live console',
                                   subtitle:
-                                      'Interactive pm3 session with logs.',
+                                      'Jump to the PM3 terminal and session logs.',
                                   color: AppPalette.primary,
-                                  onTap: connected
-                                      ? () => appState.sendCommand('hw version')
-                                      : appState.connect,
+                                  tooltip:
+                                      'Open the live console and command history.',
+                                  onTap: onOpenConsole,
                                 ),
                                 const SizedBox(height: 10),
                                 _actionTile(
                                   context,
                                   icon: Icons.auto_fix_high,
                                   title: 'Smart scan',
-                                  subtitle: 'Identify tags and run best tools.',
+                                  subtitle:
+                                      'Identify nearby tags with HF search.',
                                   color: AppPalette.accent,
+                                  tooltip: connected
+                                      ? 'Run a quick HF search with the connected Proxmark3.'
+                                      : 'Connect first, then start a smart HF scan.',
                                   onTap: connected
                                       ? appState.startReadScan
                                       : appState.connect,
@@ -316,37 +353,44 @@ class HomePage extends StatelessWidget {
                 SectionHeader(
                   title: 'Recent Activity',
                   subtitle: 'Latest operations and card interactions.',
-                  trailing: TextButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.arrow_forward_rounded),
-                    label: const Text('View logs'),
+                  trailing: Tooltip(
+                    message: 'Open the console and full activity log.',
+                    child: TextButton.icon(
+                      onPressed: onOpenConsole,
+                      icon: const Icon(Icons.arrow_forward_rounded),
+                      label: const Text('View logs'),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
                 AppCard(
                   child: Column(
-                    children: [
-                      _activityRow(
-                        context,
-                        title: 'HF card detected',
-                        subtitle: 'ISO14443A • UID 04:A1:8B:29',
-                        time: '2 min ago',
-                      ),
-                      const Divider(height: 24),
-                      _activityRow(
-                        context,
-                        title: 'Dumped MIFARE Classic 1K',
-                        subtitle: 'Keys recovered: 12/16',
-                        time: '12 min ago',
-                      ),
-                      const Divider(height: 24),
-                      _activityRow(
-                        context,
-                        title: 'LF T55xx emulation',
-                        subtitle: 'Slot 3 • 125 kHz',
-                        time: '38 min ago',
-                      ),
-                    ],
+                    children: recentActivity.isEmpty
+                        ? [
+                            _activityRow(
+                              context,
+                              title: 'No activity yet',
+                              subtitle:
+                                  'Connect a device or save a card to start building history.',
+                              time: 'Now',
+                            ),
+                          ]
+                        : recentActivity
+                              .map(
+                                (item) => Column(
+                                  children: [
+                                    _activityRow(
+                                      context,
+                                      title: item.title,
+                                      subtitle: item.detail,
+                                      time: _formatTimeAgo(item),
+                                    ),
+                                    if (recentActivity.last != item)
+                                      const Divider(height: 24),
+                                  ],
+                                ),
+                              )
+                              .toList(growable: false),
                   ),
                 ),
               ],
@@ -355,6 +399,14 @@ class HomePage extends StatelessWidget {
         );
       },
     );
+  }
+
+  String _formatTimeAgo(ActivityItem item) {
+    final delta = DateTime.now().difference(item.timestamp);
+    if (delta.inMinutes < 1) return 'Just now';
+    if (delta.inHours < 1) return '${delta.inMinutes} min ago';
+    if (delta.inDays < 1) return '${delta.inHours} hr ago';
+    return '${delta.inDays} day ago';
   }
 
   Widget _statChip(BuildContext context, String label, String value) {
@@ -379,12 +431,17 @@ class HomePage extends StatelessWidget {
           TextSpan(
             children: [
               TextSpan(
-                text: '$label ',
-                style: theme.textTheme.labelSmall?.copyWith(
+                text: '$label • ',
+                style: theme.textTheme.labelMedium?.copyWith(
                   color: theme.hintColor,
                 ),
               ),
-              TextSpan(text: value, style: theme.textTheme.labelLarge),
+              TextSpan(
+                text: value,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ],
           ),
           overflow: TextOverflow.ellipsis,
@@ -400,89 +457,45 @@ class HomePage extends StatelessWidget {
     required String title,
     required String subtitle,
     required Color color,
-    VoidCallback? onTap,
+    required String tooltip,
+    required VoidCallback? onTap,
   }) {
     final theme = Theme.of(context);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: color.withValues(alpha: 0.3)),
+    return AppCard(
+      padding: const EdgeInsets.all(14),
+      color: color.withValues(alpha: 0.08),
+      borderColor: color.withValues(alpha: 0.16),
+      onTap: onTap,
+      tooltip: tooltip,
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color),
           ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 320;
-              final titleWidget = Text(
-                title,
-                style: theme.textTheme.labelLarge,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              );
-              final subtitleWidget = Text(
-                subtitle,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.hintColor,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: theme.textTheme.labelLarge),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.hintColor,
+                  ),
                 ),
-                maxLines: compact ? 3 : 2,
-                overflow: TextOverflow.ellipsis,
-              );
-
-              if (compact) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: color.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(icon, color: color),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(child: titleWidget),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    subtitleWidget,
-                  ],
-                );
-              }
-
-              return Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, color: color),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        titleWidget,
-                        const SizedBox(height: 4),
-                        subtitleWidget,
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            },
+              ],
+            ),
           ),
-        ),
+          Icon(Icons.arrow_forward_rounded, color: color),
+        ],
       ),
     );
   }
@@ -494,93 +507,39 @@ class HomePage extends StatelessWidget {
     required String time,
   }) {
     final theme = Theme.of(context);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 520;
-        if (compact) {
-          return Row(
+    return Row(
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppPalette.primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(Icons.timeline_rounded, color: AppPalette.primary),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 10,
-                height: 10,
-                margin: const EdgeInsets.only(top: 6),
-                decoration: BoxDecoration(
-                  color: AppPalette.primary,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: theme.textTheme.labelLarge),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.hintColor,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      time,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.hintColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-        }
-
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 10,
-              height: 10,
-              margin: const EdgeInsets.only(top: 6),
-              decoration: BoxDecoration(
-                color: AppPalette.primary,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: theme.textTheme.labelLarge),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.hintColor,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            SizedBox(
-              width: 84,
-              child: Text(
-                time,
-                textAlign: TextAlign.right,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelSmall?.copyWith(
+              Text(title, style: theme.textTheme.labelLarge),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.hintColor,
                 ),
               ),
-            ),
-          ],
-        );
-      },
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          time,
+          style: theme.textTheme.labelSmall?.copyWith(color: theme.hintColor),
+        ),
+      ],
     );
   }
 }

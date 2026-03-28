@@ -28,10 +28,20 @@ migrate_working_dir/
 **/ios/Flutter/.last_build_id
 .dart_tool/
 .flutter-plugins-dependencies
+.flutter-plugins
 .pub-cache/
 .pub/
 /build/
 /coverage/
+.metadata
+pubspec_overrides.yaml
+*.orig
+*.rej
+
+# Generated bundled core payloads
+assets/bundled/macos/
+assets/bundled/linux/
+assets/bundled/windows/
 
 # Symbolication related
 app.*.symbols

@@ -11,6 +11,36 @@ PM3_SCRIPT=""
 PROXMARK_BIN=""
 SHARE_DIR=""
 
+validate_bundle() {
+  local output
+  local status
+
+  if [[ -x "$DEST_BIN_DIR/pm3" ]]; then
+    set +e
+    output="$("$DEST_BIN_DIR/pm3" --helpclient 2>&1)"
+    status=$?
+    set -e
+    if [[ $status -ne 0 ]] || grep -Eiq 'dyld|symbol not found|abort trap|error while loading shared libraries' <<<"$output"; then
+      printf '%s\n' "$output" >&2
+      echo "Bundled client validation failed. Rebuild proxmark3 and retry after confirming \`pm3 --helpclient\` works on the source build." >&2
+      exit 1
+    fi
+    return
+  fi
+
+  if [[ -x "$DEST_BIN_DIR/proxmark3" ]]; then
+    set +e
+    output="$("$DEST_BIN_DIR/proxmark3" -h 2>&1)"
+    status=$?
+    set -e
+    if [[ $status -ne 0 ]] || grep -Eiq 'dyld|symbol not found|abort trap|error while loading shared libraries' <<<"$output"; then
+      printf '%s\n' "$output" >&2
+      echo "Bundled client validation failed. Rebuild proxmark3 and retry after confirming \`proxmark3 -h\` works on the source build." >&2
+      exit 1
+    fi
+  fi
+}
+
 if [[ -n "$INPUT_PATH" && -d "$INPUT_PATH" ]]; then
   if [[ -x "$INPUT_PATH/bin/pm3" ]]; then
     PM3_SCRIPT="$INPUT_PATH/bin/pm3"
@@ -93,3 +123,4 @@ fi
 if [[ -d "$DEST_SHARE_DIR" ]]; then
   echo "  share data : $DEST_SHARE_DIR"
 fi
+validate_bundle

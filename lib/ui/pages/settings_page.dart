@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_metadata.dart';
 import '../../state/app_state.dart';
 import '../../theme/palette.dart';
 import '../widgets/app_card.dart';
@@ -46,34 +47,49 @@ class SettingsPage extends StatelessWidget {
                       appState.latestUpdate?.tag ?? 'Not checked',
                     ),
                     const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed: appState.checkForUpdates,
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Check for updates'),
+                    Tooltip(
+                      message:
+                          'Query the configured GitHub release feed for the newest compatible core.',
+                      child: FilledButton.icon(
+                        onPressed: appState.checkForUpdates,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Check for updates'),
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: appState.latestUpdate == null
-                          ? null
-                          : appState.installLatestUpdate,
-                      icon: const Icon(Icons.system_update_alt_rounded),
-                      label: const Text('Install latest core'),
+                    Tooltip(
+                      message:
+                          'Install the most recently discovered compatible core release.',
+                      child: OutlinedButton.icon(
+                        onPressed: appState.latestUpdate == null
+                            ? null
+                            : appState.installLatestUpdate,
+                        icon: const Icon(Icons.system_update_alt_rounded),
+                        label: const Text('Install latest core'),
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    FilledButton.icon(
-                      onPressed: appState.isBusy
-                          ? null
-                          : appState.downloadLatestCore,
-                      icon: const Icon(Icons.cloud_download_rounded),
-                      label: const Text('Download stable core'),
+                    Tooltip(
+                      message: 'Download the latest stable core archive.',
+                      child: FilledButton.icon(
+                        onPressed: appState.isBusy
+                            ? null
+                            : appState.downloadLatestCore,
+                        icon: const Icon(Icons.cloud_download_rounded),
+                        label: const Text('Download stable core'),
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: appState.isBusy
-                          ? null
-                          : appState.downloadExperimentalCore,
-                      icon: const Icon(Icons.science_rounded),
-                      label: const Text('Download experimental core'),
+                    Tooltip(
+                      message:
+                          'Download the latest prerelease or beta core archive.',
+                      child: OutlinedButton.icon(
+                        onPressed: appState.isBusy
+                            ? null
+                            : appState.downloadExperimentalCore,
+                        icon: const Icon(Icons.science_rounded),
+                        label: const Text('Download experimental core'),
+                      ),
                     ),
                     if (appState.isBusy)
                       Padding(
@@ -151,10 +167,14 @@ class SettingsPage extends StatelessWidget {
                           icon: const Icon(Icons.usb_rounded),
                           label: const Text('Refresh ports'),
                         ),
-                        OutlinedButton.icon(
-                          onPressed: appState.importCoreFromFile,
-                          icon: const Icon(Icons.upload_file_rounded),
-                          label: const Text('Import core binary'),
+                        Tooltip(
+                          message:
+                              'Import a local Proxmark3 client build and make it the current core.',
+                          child: OutlinedButton.icon(
+                            onPressed: appState.importCoreFromFile,
+                            icon: const Icon(Icons.upload_file_rounded),
+                            label: const Text('Import core binary'),
+                          ),
                         ),
                       ],
                     ),
@@ -174,64 +194,135 @@ class SettingsPage extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<ThemeMode>(
-                      initialValue: appState.themeMode,
-                      decoration: const InputDecoration(
-                        labelText: 'Theme',
-                        prefixIcon: Icon(Icons.dark_mode_rounded),
+                    Tooltip(
+                      message:
+                          'Choose whether the app follows the system theme or forces light/dark mode.',
+                      child: DropdownButtonFormField<ThemeMode>(
+                        initialValue: appState.themeMode,
+                        decoration: const InputDecoration(
+                          labelText: 'Theme',
+                          prefixIcon: Icon(Icons.dark_mode_rounded),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: ThemeMode.system,
+                            child: Text('System'),
+                          ),
+                          DropdownMenuItem(
+                            value: ThemeMode.light,
+                            child: Text('Light'),
+                          ),
+                          DropdownMenuItem(
+                            value: ThemeMode.dark,
+                            child: Text('Dark'),
+                          ),
+                        ],
+                        onChanged: (mode) {
+                          if (mode != null) {
+                            appState.setThemeMode(mode);
+                          }
+                        },
                       ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: ThemeMode.system,
-                          child: Text('System'),
-                        ),
-                        DropdownMenuItem(
-                          value: ThemeMode.light,
-                          child: Text('Light'),
-                        ),
-                        DropdownMenuItem(
-                          value: ThemeMode.dark,
-                          child: Text('Dark'),
-                        ),
-                      ],
-                      onChanged: (mode) {
-                        if (mode != null) {
-                          appState.setThemeMode(mode);
-                        }
-                      },
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<AccentPalette>(
-                      initialValue: appState.accentPalette,
-                      decoration: const InputDecoration(
-                        labelText: 'Palette',
-                        prefixIcon: Icon(Icons.palette_rounded),
+                    Tooltip(
+                      message:
+                          'Swap the app accent palette without changing layout or behavior.',
+                      child: DropdownButtonFormField<AccentPalette>(
+                        initialValue: appState.accentPalette,
+                        decoration: const InputDecoration(
+                          labelText: 'Palette',
+                          prefixIcon: Icon(Icons.palette_rounded),
+                        ),
+                        items: AccentPalette.values
+                            .map(
+                              (palette) => DropdownMenuItem(
+                                value: palette,
+                                child: Text(AppPalette.paletteLabel(palette)),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (palette) {
+                          if (palette != null) {
+                            appState.setAccentPalette(palette);
+                          }
+                        },
                       ),
-                      items: AccentPalette.values
-                          .map(
-                            (palette) => DropdownMenuItem(
-                              value: palette,
-                              child: Text(AppPalette.paletteLabel(palette)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (palette) {
-                        if (palette != null) {
-                          appState.setAccentPalette(palette);
-                        }
-                      },
                     ),
                     const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: appState.reopenOnboarding,
-                      icon: const Icon(Icons.auto_awesome),
-                      label: const Text('Show Help Overlay'),
+                    Tooltip(
+                      message: 'Reopen the first-run setup guide.',
+                      child: OutlinedButton.icon(
+                        onPressed: appState.reopenOnboarding,
+                        icon: const Icon(Icons.auto_awesome),
+                        label: const Text('Show Help Overlay'),
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: appState.openSupportLink,
-                      icon: const Icon(Icons.coffee_rounded),
-                      label: const Text('Support Project'),
+                    Tooltip(
+                      message: 'Open the project support link in your browser.',
+                      child: OutlinedButton.icon(
+                        onPressed: appState.openSupportLink,
+                        icon: const Icon(Icons.coffee_rounded),
+                        label: const Text('Support Project'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.policy_rounded, color: AppPalette.warning),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Project & Compliance',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _settingRow('Application', AppMetadata.appName),
+                    _settingRow('Version', AppMetadata.appVersion),
+                    _settingRow('License', AppMetadata.appLicense),
+                    _settingRow(
+                      'Embedded core policy',
+                      'Invalid bundled binaries are ignored at launch',
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Release builds must document upstream core provenance and keep third-party notices with any redistributed binaries.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.hintColor,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        Tooltip(
+                          message:
+                              'Open the upstream Proxmark3 documentation wiki.',
+                          child: OutlinedButton.icon(
+                            onPressed: appState.openDocumentation,
+                            icon: const Icon(Icons.menu_book_rounded),
+                            label: const Text('Open docs'),
+                          ),
+                        ),
+                        Tooltip(
+                          message: 'Open the project support link.',
+                          child: OutlinedButton.icon(
+                            onPressed: appState.openSupportLink,
+                            icon: const Icon(Icons.coffee_rounded),
+                            label: const Text('Buy me a coffee'),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

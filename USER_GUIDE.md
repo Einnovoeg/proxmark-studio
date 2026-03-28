@@ -1,74 +1,118 @@
-# macKinect User Guide
+# Proxmark Studio User Guide
 
 ## 1. First Launch
 
-On first launch, macKinect resolves the core in this order:
+Proxmark Studio looks for a usable Proxmark3 client in this order:
 
-1. Existing selected core (`Application Support/core/current.json`)
-2. Bundled embedded core (`assets/bundled/...`)
-3. System fallback (if available)
+1. The currently selected client recorded in application support
+2. A validated embedded client, if one exists in the app bundle
+3. A validated system installation in a known package path
 
-If no core is available, use **Core Options** to install one.
+If no working client is available, the app stays usable for browsing saved cards and settings, but live device actions remain disabled until you import a working core.
 
-## 2. Connect to Hardware
+## 2. Import Or Update The Core
 
-1. Plug in your Proxmark3.
-2. Click **Refresh Ports**.
-3. Confirm the selected port (Iceman-like ports are preferred automatically).
-4. Click **Connect**.
+Use `Core Options` in the top bar or the `Settings` page to:
 
-## 3. Standard Scans
+- Check for updates
+- Install the latest discovered compatible core
+- Download the stable channel
+- Download the experimental channel
+- Import a local core binary
 
-Open **Read** tab:
+When importing a local client:
 
-- **Scan HF**: single high-frequency search.
-- **Scan LF**: single low-frequency search.
-- **Scan EMV**: EMV scan command.
-- **Continuous HF**: repeated HF scan loop.
-- **Continuous LF**: repeated LF scan loop.
-- **Stop Scan**: interrupts current scan loop.
+- `pm3` wrapper scripts must have their matching `proxmark3` client beside them
+- `share/proxmark3` data should stay with the client when available
+- Broken clients are rejected if `pm3 --helpclient` or `proxmark3 -h` fails
 
-## 4. Advanced Tab
+## 3. Connect To Hardware
 
-Open **Advanced** tab:
+1. Connect the Proxmark3 over USB.
+2. Hover over controls if you want a description of each action.
+3. Click `Refresh Ports`.
+4. Confirm the selected serial port. Iceman-style device names are preferred automatically when detected.
+5. Click `Connect`.
 
-1. Choose **Group** (HF / LF / EMV / Utility).
-2. Choose **Action**.
-3. Choose **Preset**.
-4. Click **Add to chain** to queue commands.
-5. Click **Run chain** to execute sequentially.
+## 4. Read Cards
 
-You can also add manual commands in **Custom command**.
+Open `Read` to run:
 
-## 5. Core Management
+- HF search
+- LF search
+- EMV scan
+- Continuous HF scan
+- Continuous LF scan
+- Save the current read into the local card library
+- Clone the current read into the next free slot
 
-Use **Core Options** in top bar:
+Saved reads appear in `Saved Cards` and can be reused in `Slots` and `Write`.
 
-- **Update Current Core**
-- **Download Latest Stable**
-- **Download Experimental/Beta**
-- **Add Separate Core**
-- **Install Local Core**
+## 5. Saved Cards
 
-## 6. Documentation
+Open `Saved Cards` to:
 
-Use the **Docs** button (top bar) or **Documentation** button in **Advanced** page.
+- Search the local library by label, tag type, UID, or notes
+- Import saved-card metadata from file
+- Select a card for slot assignment or writing
+- Send a card to the next available slot
+- Open a card in the write planner
+- Delete a card from the library
 
-## 7. Common Troubleshooting
+## 6. Slots
 
-### Device not found
+Open `Slots` to manage the eight-slot workspace:
 
-- Reconnect USB.
-- Refresh ports.
-- Verify selected `/dev/tty.*` or `/dev/cu.*` path.
-- Try disconnect/connect from the app.
+- Activate any slot
+- Assign the currently selected saved card to a slot
+- Replace an existing slot assignment
+- Clear a slot
+- Open the assigned card directly in the write planner
 
-### Command appears to do nothing
+The active slot and selected card are shown at the top of the page.
 
-- Check **Tools & Console** for command output.
-- Verify device is connected before running scan/advanced commands.
+## 7. Write Plans
 
-### Core update not available
+Open `Write` to:
 
-- Update/download uses GitHub release assets.  
-  If no compatible asset is found, use **Install Local Core**.
+- Choose a saved card
+- Edit one PM3 command per line
+- Save the write plan back into the card library
+- Append a verification scan automatically
+- Assign the card to the next free slot after the plan is queued
+- Run the plan through the live PM3 session
+
+The planner shows live status for card selection, command count, and connection state.
+
+## 8. Advanced And Console
+
+Open `Advanced` for guided command-chain building and `Tools & Console` for:
+
+- Live PM3 output
+- Manual command entry
+- Console clearing
+- Quick visibility into HF and LF tool areas
+
+## 9. Troubleshooting
+
+### No core available
+
+- Import a local Proxmark3 client from `Settings` or `Core Options`.
+- If a bundled or imported core is rejected, validate it manually with `pm3 --helpclient` or `proxmark3 -h`.
+
+### Device not detected
+
+- Reconnect USB and click `Refresh Ports`.
+- Verify the selected `/dev/tty.*` or `/dev/cu.*` path on macOS.
+- Disconnect and reconnect from the app.
+
+### Commands appear inactive
+
+- Check `Tools & Console` for PM3 output.
+- Confirm the device is connected before starting scans or running a write plan.
+- Save the current write plan before running it if you expect commands to persist with the card.
+
+### Online update actions do nothing
+
+- Official online updates require release-feed metadata in the build.
+- If no official feed is configured, import a local core instead.

@@ -1,7 +1,19 @@
-Place bundled Proxmark3 core binaries and firmware here.
-Example structure:
-- bundled/macos/arm64/pm3
-- bundled/windows/x64/pm3.exe
-- bundled/linux/x64/pm3
+This source release intentionally ships no compiled Proxmark3 client.
 
-The app will copy these to the Application Support folder on first run.
+If you create a private bundled build, place the generated payload under this
+directory with a platform and architecture layout such as:
+
+- bundled/macos/arm64/bin/pm3
+- bundled/macos/arm64/bin/proxmark3
+- bundled/macos/arm64/share/proxmark3/...
+
+Before distributing any bundled runtime, record all of the following here:
+
+- upstream project name
+- exact source tag or commit
+- build date
+- platform and architecture
+- applicable upstream license
+- where recipients can obtain the corresponding source
+
+The application validates bundled clients before trusting them at runtime.

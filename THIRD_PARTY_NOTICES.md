@@ -1,61 +1,77 @@
-# Third-Party Notices and License Compliance
+# Third-Party Notices And License Compliance
 
-This document summarizes third-party components used by macKinect and their license context.
+This file summarizes the upstream projects and direct dependencies used by Proxmark Studio as of release `0.2.0` on March 28, 2026.
 
-## 1) Core Ecosystem
+## Project License
+
+Proxmark Studio source code is distributed under `GPL-3.0-only`. The full license text is included in `LICENSE`.
+
+## Upstream Credits
 
 ### RfidResearchGroup / proxmark3
 
-- Project: [https://github.com/RfidResearchGroup/proxmark3](https://github.com/RfidResearchGroup/proxmark3)
+- Project: [RfidResearchGroup/proxmark3](https://github.com/RfidResearchGroup/proxmark3)
+- Upstream license: GPL-3.0
+- License file: [LICENSE.txt](https://github.com/RfidResearchGroup/proxmark3/blob/master/LICENSE.txt)
 - Use in this project:
-  - Bundled runtime core artifacts (`pm3`, `proxmark3`, `share/proxmark3`)
   - Command compatibility target for GUI actions
-- Upstream license:
-  - Declared as GPL-3.0 in upstream repository metadata.
-  - License file: [https://github.com/RfidResearchGroup/proxmark3/blob/master/LICENSE.txt](https://github.com/RfidResearchGroup/proxmark3/blob/master/LICENSE.txt)
-- Compliance approach:
-  - This repository includes the GPLv3 license text in `LICENSE`.
-  - Source references and attribution are provided in `README.md`.
-  - Bundled core remains under upstream licensing terms.
+  - Optional local or embedded client/runtime source for private builds
+  - Documentation and workflow references
 
-## 2) UI/UX Inspiration
+### iceman1001 / proxmark3
+
+- Project: [iceman1001/proxmark3](https://github.com/iceman1001/proxmark3)
+- Upstream license: GPL-2.0
+- License file: [LICENSE.txt](https://github.com/iceman1001/proxmark3/blob/master/LICENSE.txt)
+- Use in this project:
+  - Historical Iceman lineage reference
+  - Device naming and user workflow context
 
 ### GameTec-live / ChameleonUltraGUI
 
-- Project: [https://github.com/GameTec-live/ChameleonUltraGUI](https://github.com/GameTec-live/ChameleonUltraGUI)
+- Project: [GameTec-live/ChameleonUltraGUI](https://github.com/GameTec-live/ChameleonUltraGUI)
+- Upstream license: GPL-3.0
+- License file: [LICENSE](https://github.com/GameTec-live/ChameleonUltraGUI/blob/main/LICENSE)
 - Use in this project:
-  - UI/UX inspiration only (navigation layout and modern desktop interaction style).
-- Upstream license:
-  - MIT license (per upstream repository metadata).
-  - License file: [https://github.com/GameTec-live/ChameleonUltraGUI/blob/main/LICENSE](https://github.com/GameTec-live/ChameleonUltraGUI/blob/main/LICENSE)
-- Compliance approach:
-  - No direct source copy from this project is included.
-  - Attribution and citation are provided in `README.md`.
+  - UI and layout inspiration only
+  - No direct source copy is included in this repository
 
-## 3) Flutter and Dart Packages (Direct Dependencies)
+Contributor links for those upstream projects are listed in `CONTRIBUTORS.md`.
 
-These are direct `pubspec.yaml` dependencies used by this project:
+## Direct Flutter And Dart Dependencies
 
-- `flutter` (Flutter SDK) - BSD-style license
-- `intl` - BSD-style license
-- `flutter_libserialport` - MIT
-- `libserialport` - LGPL-3.0
-- `path_provider` - BSD-style license
-- `http` - BSD-style license
-- `archive` - MIT
-- `crypto` - BSD-style license
-- `provider` - MIT
-- `file_selector` - BSD-style license
+The following direct dependencies are declared in `pubspec.yaml` and locked in `pubspec.lock` for this release:
 
-License files for these dependencies are available in local pub cache after `flutter pub get`.
+- `intl 0.20.2` — BSD-style license
+- `flutter_libserialport 0.6.0` — MIT
+- `libserialport 0.3.0+1` — LGPL-3.0
+- `path_provider 2.1.5` — BSD-style license
+- `path 1.9.1` — BSD-style license
+- `http 1.6.0` — BSD-style license
+- `archive 4.0.7` — MIT
+- `crypto 3.0.7` — BSD-style license
+- `provider 6.1.5+1` — MIT
+- `file_selector 1.1.0` — BSD-style license
 
-## 4) Local Legacy Reference
+The Flutter SDK itself is distributed under a BSD-style license. Dependency license texts can be inspected in the local pub cache after running `flutter pub get`.
 
-- Historical Qt implementation included in this repository root (`src/`), used as migration/reference material.
-- Repository root currently includes LGPL-2.1 license text (`/LICENSE`) for legacy portions.
+## Binary Distribution Policy
 
-## 5) Distribution Notes
+This source release intentionally does **not** ship compiled Proxmark3 client binaries.
 
-- If distributing binaries that include bundled Proxmark3 core, keep attribution and license notices intact.
-- If you replace bundled core artifacts, ensure the replacement source and notices are compatible and documented.
-- If adding new dependencies, update this file before release.
+If you distribute a future binary release that includes:
+
+- an embedded Proxmark3 client
+- a packaged PM3 runtime
+- a release asset containing upstream PM3 object code
+
+then you must also do all of the following:
+
+- preserve upstream copyright and license notices
+- provide the corresponding source in a compliant way for the shipped binary payload
+- record the exact upstream source tag or commit in `assets/bundled/README.txt` and in the release notes
+- update this file if the bundled source, license set, or dependency list changes
+
+## No Warranty
+
+Proxmark Studio and all referenced free-software components are provided without warranty, subject to their respective licenses.

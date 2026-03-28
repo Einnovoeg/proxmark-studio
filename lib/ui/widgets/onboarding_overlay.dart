@@ -68,11 +68,14 @@ class _OnboardingOverlayState extends State<OnboardingOverlay> {
                             ],
                           ),
                         ),
-                        IconButton(
-                          onPressed: () => widget.appState.closeOnboarding(
-                            dismissPermanently: _dontShowAgain,
+                        Tooltip(
+                          message: 'Close the setup guide.',
+                          child: IconButton(
+                            onPressed: () => widget.appState.closeOnboarding(
+                              dismissPermanently: _dontShowAgain,
+                            ),
+                            icon: const Icon(Icons.close_rounded),
                           ),
-                          icon: const Icon(Icons.close_rounded),
                         ),
                       ],
                     ),
@@ -89,25 +92,33 @@ class _OnboardingOverlayState extends State<OnboardingOverlay> {
                         ),
                         const Text('Don\'t show again'),
                         const Spacer(),
-                        TextButton(
-                          onPressed: _stepIndex == 0
-                              ? null
-                              : () => setState(() => _stepIndex -= 1),
-                          child: const Text('Back'),
+                        Tooltip(
+                          message: 'Go back to the previous setup step.',
+                          child: TextButton(
+                            onPressed: _stepIndex == 0
+                                ? null
+                                : () => setState(() => _stepIndex -= 1),
+                            child: const Text('Back'),
+                          ),
                         ),
                         const SizedBox(width: 8),
-                        FilledButton(
-                          onPressed: () {
-                            if (_stepIndex < steps.length - 1) {
-                              setState(() => _stepIndex += 1);
-                            } else {
-                              widget.appState.closeOnboarding(
-                                dismissPermanently: _dontShowAgain,
-                              );
-                            }
-                          },
-                          child: Text(
-                            _stepIndex < steps.length - 1 ? 'Next' : 'Finish',
+                        Tooltip(
+                          message: _stepIndex < steps.length - 1
+                              ? 'Continue to the next setup step.'
+                              : 'Close the setup guide and return to the app.',
+                          child: FilledButton(
+                            onPressed: () {
+                              if (_stepIndex < steps.length - 1) {
+                                setState(() => _stepIndex += 1);
+                              } else {
+                                widget.appState.closeOnboarding(
+                                  dismissPermanently: _dontShowAgain,
+                                );
+                              }
+                            },
+                            child: Text(
+                              _stepIndex < steps.length - 1 ? 'Next' : 'Finish',
+                            ),
                           ),
                         ),
                       ],
@@ -134,7 +145,7 @@ class _OnboardingOverlayState extends State<OnboardingOverlay> {
         accent: AppPalette.secondary,
         body: [
           Text(
-            'macKinect needs the pm3 client binary from Iceman. You can import it from a local build or download a stable core.',
+            'Proxmark Studio needs the pm3 client binary from Iceman. You can import it from a local build or download a stable core.',
             style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
@@ -142,15 +153,26 @@ class _OnboardingOverlayState extends State<OnboardingOverlay> {
             spacing: 10,
             runSpacing: 10,
             children: [
-              FilledButton.icon(
-                onPressed: appState.isBusy ? null : appState.importCoreFromFile,
-                icon: const Icon(Icons.upload_file_rounded),
-                label: const Text('Import core'),
+              Tooltip(
+                message: 'Import a local Proxmark3 client build.',
+                child: FilledButton.icon(
+                  onPressed: appState.isBusy
+                      ? null
+                      : appState.importCoreFromFile,
+                  icon: const Icon(Icons.upload_file_rounded),
+                  label: const Text('Import core'),
+                ),
               ),
-              OutlinedButton.icon(
-                onPressed: appState.isBusy ? null : appState.downloadLatestCore,
-                icon: const Icon(Icons.cloud_download_rounded),
-                label: const Text('Download stable'),
+              Tooltip(
+                message:
+                    'Download the latest stable official core bundle when release metadata is configured.',
+                child: OutlinedButton.icon(
+                  onPressed: appState.isBusy
+                      ? null
+                      : appState.downloadLatestCore,
+                  icon: const Icon(Icons.cloud_download_rounded),
+                  label: const Text('Download stable'),
+                ),
               ),
             ],
           ),
@@ -228,10 +250,13 @@ class _OnboardingOverlayState extends State<OnboardingOverlay> {
               ),
             ),
           const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: appState.isBusy ? null : appState.refreshPorts,
-            icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Refresh ports'),
+          Tooltip(
+            message: 'Rescan connected serial ports.',
+            child: OutlinedButton.icon(
+              onPressed: appState.isBusy ? null : appState.refreshPorts,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Refresh ports'),
+            ),
           ),
         ],
       ),
@@ -246,14 +271,19 @@ class _OnboardingOverlayState extends State<OnboardingOverlay> {
             style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: appState.isBusy
-                ? null
-                : (appState.isConnected
-                      ? appState.disconnect
-                      : appState.connect),
-            icon: Icon(appState.isConnected ? Icons.link_off : Icons.link),
-            label: Text(appState.isConnected ? 'Disconnect' : 'Connect'),
+          Tooltip(
+            message: appState.isConnected
+                ? 'Disconnect the active PM3 session.'
+                : 'Connect to the selected Proxmark3 serial port.',
+            child: FilledButton.icon(
+              onPressed: appState.isBusy
+                  ? null
+                  : (appState.isConnected
+                        ? appState.disconnect
+                        : appState.connect),
+              icon: Icon(appState.isConnected ? Icons.link_off : Icons.link),
+              label: Text(appState.isConnected ? 'Disconnect' : 'Connect'),
+            ),
           ),
         ],
       ),
@@ -271,19 +301,27 @@ class _OnboardingOverlayState extends State<OnboardingOverlay> {
           Wrap(
             spacing: 10,
             children: [
-              FilledButton.icon(
-                onPressed: appState.isConnected
-                    ? () => appState.sendCommand('hw version')
-                    : null,
-                icon: const Icon(Icons.play_arrow_rounded),
-                label: const Text('Run hw version'),
+              Tooltip(
+                message:
+                    'Send `hw version` to confirm the client session is live.',
+                child: FilledButton.icon(
+                  onPressed: appState.isConnected
+                      ? () => appState.sendCommand('hw version')
+                      : null,
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('Run hw version'),
+                ),
               ),
-              OutlinedButton.icon(
-                onPressed: appState.isConnected
-                    ? () => appState.sendCommand('hf search')
-                    : null,
-                icon: const Icon(Icons.radar_rounded),
-                label: const Text('Run hf search'),
+              Tooltip(
+                message:
+                    'Send `hf search` to verify tag reads from the console.',
+                child: OutlinedButton.icon(
+                  onPressed: appState.isConnected
+                      ? () => appState.sendCommand('hf search')
+                      : null,
+                  icon: const Icon(Icons.radar_rounded),
+                  label: const Text('Run hf search'),
+                ),
               ),
             ],
           ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../app/app_metadata.dart';
 import '../state/app_state.dart';
 import 'pages/advanced_page.dart';
 import 'pages/home_page.dart';
@@ -10,10 +11,10 @@ import 'pages/settings_page.dart';
 import 'pages/slot_manager_page.dart';
 import 'pages/tools_page.dart';
 import 'pages/write_cards_page.dart';
+import 'widgets/onboarding_overlay.dart';
 import 'widgets/sidebar.dart';
 import 'widgets/status_footer.dart';
 import 'widgets/top_bar.dart';
-import 'widgets/onboarding_overlay.dart';
 
 enum _CoreMenuAction {
   updateCurrent,
@@ -136,8 +137,9 @@ class _AppShellState extends State<AppShell> {
                                     ),
                                   ),
                                   Tooltip(
-                                    message:
-                                        'Download the latest stable core from GitHub sources configured in Settings.',
+                                    message: appState.hasConfiguredUpdateSource
+                                        ? 'Download the latest bundled core archive from the official release feed.'
+                                        : 'Online updates are only enabled in official release builds.',
                                     child: FilledButton.tonalIcon(
                                       onPressed: appState.isBusy
                                           ? null
@@ -238,8 +240,10 @@ class _AppShellState extends State<AppShell> {
                               const SizedBox(height: 16),
                               StatusFooter(
                                 coreVersion: 'Core • $coreLabel',
-                                channelLabel: 'Stable Channel',
-                                appVersion: '0.1.0',
+                                channelLabel: appState.hasConfiguredUpdateSource
+                                    ? 'Official Release Feed'
+                                    : 'Local / Bundled Core',
+                                appVersion: AppMetadata.appVersion,
                               ),
                             ],
                           ),
@@ -262,13 +266,23 @@ class _AppShellState extends State<AppShell> {
       case 0:
         return HomePage(
           key: ValueKey(index),
+          appState: appState,
           connected: appState.isConnected,
           portName: appState.selectedPort?.displayName,
+          onOpenConsole: () => setState(() => _selectedIndex = 6),
         );
       case 1:
-        return const SlotManagerPage(key: ValueKey('slots'));
+        return SlotManagerPage(
+          key: const ValueKey('slots'),
+          appState: appState,
+          onOpenWrite: () => setState(() => _selectedIndex = 5),
+        );
       case 2:
-        return const SavedCardsPage(key: ValueKey('saved'));
+        return SavedCardsPage(
+          key: const ValueKey('saved'),
+          appState: appState,
+          onOpenWrite: () => setState(() => _selectedIndex = 5),
+        );
       case 3:
         return ReadCardsPage(key: const ValueKey('read'), appState: appState);
       case 4:
@@ -277,7 +291,7 @@ class _AppShellState extends State<AppShell> {
           appState: appState,
         );
       case 5:
-        return const WriteCardsPage(key: ValueKey('write'));
+        return WriteCardsPage(key: const ValueKey('write'), appState: appState);
       case 6:
         return ToolsPage(key: const ValueKey('tools'), appState: appState);
       case 7:

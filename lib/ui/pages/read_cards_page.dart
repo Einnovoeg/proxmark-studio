@@ -304,13 +304,17 @@ class ReadCardsPage extends StatelessWidget {
                           Text('Actions', style: theme.textTheme.labelLarge),
                           const SizedBox(height: 8),
                           FilledButton.icon(
-                            onPressed: () {},
+                            onPressed: appState.hasReadableCard
+                                ? appState.saveCurrentRead
+                                : null,
                             icon: const Icon(Icons.save_rounded),
                             label: const Text('Save to library'),
                           ),
                           const SizedBox(height: 8),
                           OutlinedButton.icon(
-                            onPressed: () {},
+                            onPressed: appState.hasReadableCard
+                                ? appState.cloneCurrentReadToNextFreeSlot
+                                : null,
                             icon: const Icon(Icons.copy_rounded),
                             label: const Text('Clone to slot'),
                           ),

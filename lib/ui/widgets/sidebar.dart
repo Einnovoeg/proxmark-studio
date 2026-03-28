@@ -69,7 +69,7 @@ class Sidebar extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'macKinect',
+                    'Proxmark Studio',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -94,51 +94,54 @@ class Sidebar extends StatelessWidget {
                 final isSelected = index == selectedIndex;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 6),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () => onSelect(index),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? AppPalette.primary.withValues(alpha: 0.12)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: isSelected
-                              ? AppPalette.primary.withValues(alpha: 0.35)
-                              : Colors.transparent,
+                  child: Tooltip(
+                    message: item.label,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () => onSelect(index),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
                         ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            item.icon,
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppPalette.primary.withValues(alpha: 0.12)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
                             color: isSelected
-                                ? AppPalette.primary
-                                : (isDark
-                                      ? theme.colorScheme.onSurface
-                                      : AppPalette.slate),
+                                ? AppPalette.primary.withValues(alpha: 0.35)
+                                : Colors.transparent,
                           ),
-                          if (!compact) ...[
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                item.label,
-                                style: Theme.of(context).textTheme.labelLarge
-                                    ?.copyWith(
-                                      fontWeight: isSelected
-                                          ? FontWeight.w600
-                                          : FontWeight.w500,
-                                    ),
-                              ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              item.icon,
+                              color: isSelected
+                                  ? AppPalette.primary
+                                  : (isDark
+                                        ? theme.colorScheme.onSurface
+                                        : AppPalette.slate),
                             ),
+                            if (!compact) ...[
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  item.label,
+                                  style: Theme.of(context).textTheme.labelLarge
+                                      ?.copyWith(
+                                        fontWeight: isSelected
+                                            ? FontWeight.w600
+                                            : FontWeight.w500,
+                                      ),
+                                ),
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ),
                   ),
