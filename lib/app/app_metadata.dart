@@ -1,6 +1,6 @@
 class AppMetadata {
   static const appName = 'Proxmark Studio';
-  static const appVersion = '0.2.0';
+  static const appVersion = '1.0.0';
   static const appLicense = 'GPL-3.0-only';
 
   static const documentationUrl =
